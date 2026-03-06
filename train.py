@@ -3,98 +3,91 @@ import json
 import os
 import joblib
 
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import Lasso
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.pipeline import Pipeline
 
 # --------------------------------------------------
-# 1. Define base paths
+# 1. Create output directory
 # --------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_PATH = os.path.join(BASE_DIR, "data", "winequality-red.csv")
-ARTIFACT_DIR = os.path.join(BASE_DIR, "app", "artifacts")
-
-# Create artifact directory
-os.makedirs(ARTIFACT_DIR, exist_ok=True)
+os.makedirs("output", exist_ok=True)
 
 # --------------------------------------------------
-# 2. Load dataset
+# 2. Load dataset (Correct separator)
 # --------------------------------------------------
-data = pd.read_csv(DATA_PATH, sep=";")
+data_path = os.path.join("data", "winequality-red.csv")
+
+# Define column names explicitly since the header is malformed
+column_names = [
+    'fixed acidity', 'volatile acidity', 'citric acid', 'residual sugar',
+    'chlorides', 'free sulfur dioxide', 'total sulfur dioxide', 'density',
+    'pH', 'sulphates', 'alcohol', 'quality'
+]
+
+data = pd.read_csv(data_path, sep=";", header=None, names=column_names, skiprows=1)
+
+# Remove extra spaces from column names (though not necessary now)
+data.columns = data.columns.str.strip()
+
+print("Columns in dataset:", data.columns)
 
 # --------------------------------------------------
-# 3. Split features and target
+# 3. Separate features and target
 # --------------------------------------------------
-X = data.drop("quality", axis=1)
-y = data["quality"]
+# Automatically select last column as target
+target_column = data.columns[-1]
+
+X = data.drop(target_column, axis=1)
+y = data[target_column]
 
 # --------------------------------------------------
-# 4. Train-test split
+# 4. Feature Scaling
+# --------------------------------------------------
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# --------------------------------------------------
+# 5. Train-Test Split
 # --------------------------------------------------
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.3, random_state=42
+    X_scaled, y, test_size=0.3, random_state=42
 )
 
 # --------------------------------------------------
-# 5. Pipeline (Scaling + Model)
+# 6. Train Model
 # --------------------------------------------------
-pipeline = Pipeline([
-    ("scaler", StandardScaler()),
-    ("lasso", Lasso(max_iter=10000))
-])
+model = Lasso(alpha=0.5, max_iter=10000)
+model.fit(X_train, y_train)
 
 # --------------------------------------------------
-# 6. Hyperparameter tuning
+# 7. Prediction
 # --------------------------------------------------
-param_grid = {
-    "lasso__alpha": [0.001, 0.01, 0.05, 0.1, 0.5]
-}
-
-grid = GridSearchCV(
-    pipeline,
-    param_grid,
-    cv=5,
-    scoring="r2"
-)
+y_pred = model.predict(X_test)
 
 # --------------------------------------------------
-# 7. Train model
-# --------------------------------------------------
-grid.fit(X_train, y_train)
-best_model = grid.best_estimator_
-
-# --------------------------------------------------
-# 8. Prediction
-# --------------------------------------------------
-y_pred = best_model.predict(X_test)
-
-# --------------------------------------------------
-# 9. Metrics
+# 8. Evaluation Metrics
 # --------------------------------------------------
 mse = mean_squared_error(y_test, y_pred)
 r2 = r2_score(y_test, y_pred)
 
-print("Best alpha:", grid.best_params_["lasso__alpha"])
-print("MSE:", mse)
-print("R2 Score:", r2)
+print(f"MSE: {mse}")
+print(f"R2 Score: {r2}")
 
 # --------------------------------------------------
-# 10. Save model
+# 9. Save Model
 # --------------------------------------------------
-joblib.dump(best_model, os.path.join(ARTIFACT_DIR, "model.pkl"))
+joblib.dump(model, os.path.join("output", "model.pkl"))
 
 # --------------------------------------------------
-# 11. Save metrics
+# 10. Save Metrics
 # --------------------------------------------------
 metrics = {
     "MSE": mse,
-    "R2_Score": r2,
-    "Best_Alpha": grid.best_params_["lasso__alpha"]
+    "R2_Score": r2
 }
 
-with open(os.path.join(ARTIFACT_DIR, "metrics.json"), "w") as f:
+with open(os.path.join("output", "metrics.json"), "w") as f:
     json.dump(metrics, f, indent=4)
 
-print("Artifacts saved to:", ARTIFACT_DIR)
+print("Model and metrics saved successfully in 'output' folder.")
